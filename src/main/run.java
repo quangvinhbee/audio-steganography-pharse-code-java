@@ -33,7 +33,7 @@ public class run {
     private static Scanner scann = new Scanner(System.in);
 
     public static void Decode() throws Exception {
-
+        System.out.println("-----------------DECODE---------------------");
         System.out.println("Nhập độ dài chuỗi: ");
         int len = Integer.parseInt(scann.nextLine());
 
@@ -87,29 +87,23 @@ public class run {
 
     }
 
-    public static void Encode() throws Exception {
+    public static void HandleEncode(String messageSecret) throws Exception {
         String audioFile = "C:\\Users\\lamqu\\Desktop\\LAB\\LAB_KTGT\\phase-coding-audio\\file_example_WAV_5MG.wav";
         ArrayList<Float> wave = getWaveFromAudio(new File("C:\\Users\\lamqu\\Desktop\\LAB\\LAB_KTGT\\phase-coding-audio\\file_example_WAV_5MG.wav"));//đọc file và biến đổi thành sóng
         AudioSampleReader sampleReader = new AudioSampleReader(new File(audioFile));
-        System.out.println(sampleReader);
         float[] dataFloat = Read.audio(audioFile);
-//        for (int i = 0; i < dataFloat.length / 2; i++) {
-//            System.out.print(" " + dataFloat[i]);
-//        }
-//        System.out.println(wave);
-        System.out.println("Nhập tin cần giấu: ");
-        String messageSecret = scann.nextLine();
         int msglen = 8 * messageSecret.length(); // 1 byte = 8bit
+
         int temp = (int) Math.round(Math.ceil(Math.log(msglen) / Math.log(2)));
         double temp_1 = 2 * Math.pow(2, temp);
         int seglen = (int) temp_1;
         int segnum = (int) Math.ceil(wave.size() / seglen); // tính độ dài các đoạn
-        int[] msgBin = BinaryTool.ASCIIToBinary(messageSecret).getIntArray(); // biến đổi thành chuỗi nhị phân
+        int[] msgBin;
+        msgBin = BinaryTool.ASCIIToBinary(messageSecret).getIntArray(); // biến đổi thành chuỗi nhị phân
         double[] msgPi = new double[msgBin.length];
-        System.out.println("length = " + msglen);
 
         for (int i = 0; i < msgPi.length; i++) {
-            
+
             if (msgBin[i] == 0) {
                 msgPi[i] = -1 * Math.PI / 2;
             } else {
@@ -126,59 +120,78 @@ public class run {
         double[] channelOne = new double[dataFloat.length / 2];
         for (int i = 0; i < dataWave.length; i += 2) {
             channelOne[i / 2] = dataWave[i];
-            // System.out.print(" "+channelOne[i / 2]);
+
         }
-        // biến đổi Fourier
-//        FFTData[] freqMag = FFT.getMag(channelOne, 44100); // TODO: don't hardcode
-//        FFTDataAnalyzer analyzer = new FFTDataAnalyzer(freqMag);
-//        boolean isRest = analyzer.isRest();
-//
-        channelOne = FFT.correctDataLength(channelOne);
+        if (msglen > channelOne.length) {
+            System.out.println("Độ dài tin cần giấu quá dài! không thể giấu tin");
+            return;
+        }
+
+        channelOne = FFT.correctDataLength(channelOne); // kiểm tra xem data đã đúng chuẩn chưa để biến đ
 
         FastFourierTransformer transformer = new FastFourierTransformer(DftNormalization.UNITARY);
+        
+        Complex[] complexFFT,complexI_FFT;
 
-        Complex[] complexFFT = transformer.transform(channelOne, TransformType.FORWARD); //biến đổi theo tần số
+        complexFFT = transformer.transform(channelOne, TransformType.FORWARD); //biến đổi theo tần số
 
-        for (int i = 0; i < msgPi.length; i += 1) {
+        for (int i = 0; i < msgPi.length; i++) { // gán pi/2 với -pi/2 vào mảng complex cũ
             complexFFT[i] = new Complex(msgPi[i] * complexFFT[i].abs());
         }
-        Complex[] complexI_FFT = transformer.transform(complexFFT, TransformType.FORWARD);// biến đổi theo thời gian (trạng thái ban đầu)
 
-        double[] complexTemp = new double[complexI_FFT.length];
-
-        for (int i = 0; i < complexI_FFT.length; i++) {
-            complexTemp[i] = complexI_FFT[i].getReal();
+        for (int i = msgPi.length * 2 - 1; i >= msgPi.length; i--) { // gán cho đối xứng
+            complexFFT[i] = new Complex(-msgPi[i - (msgPi.length)] * complexFFT[i].abs());
         }
+        
+        
 
-        for (int i = 0; i < complexI_FFT.length; i++) {
+        complexI_FFT = transformer.transform(complexFFT, TransformType.FORWARD);// biến đổi theo thời gian (trạng thái ban đầu)
+        for (int i = 0; i < complexI_FFT.length; i++) { // biến từ số phức qua số thực để giống với trạng thái ban đầu
             channelOne[i] = complexI_FFT[i].getReal();
         }
+        
+        // biến đổi lần 2
+        complexFFT = transformer.transform(channelOne, TransformType.FORWARD); //biến đổi theo tần số
 
-        Complex[] complexRe = transformer.transform(channelOne, TransformType.FORWARD);
+        for (int i = 0; i < msgPi.length; i++) { // gán pi/2 với -pi/2 vào mảng complex cũ
+            complexFFT[i] = new Complex(msgPi[i] * complexFFT[i].abs());
+        }
+
+        for (int i = msgPi.length * 2 - 1; i >= msgPi.length; i--) { // gán cho đối xứng
+            complexFFT[i] = new Complex(-msgPi[i - (msgPi.length)] * complexFFT[i].abs());
+        }
+        
+        
+
+        complexI_FFT = transformer.transform(complexFFT, TransformType.FORWARD);// biến đổi theo thời gian (trạng thái ban đầu)
+        for (int i = 0; i < complexI_FFT.length; i++) { // biến từ số phức qua số thực để giống với trạng thái ban đầu
+            channelOne[i] = complexI_FFT[i].getReal();
+        }
+        
+       
 
         for (int i = 0; i < channelOne.length; i++) {
             dataWave[i * 2] = channelOne[i];
         }
-
+        
         
 
         File outFile = new File("C:\\Users\\lamqu\\Desktop\\LAB\\LAB_KTGT\\phase-coding-audio\\encoded_Run.wav");
         AudioSampleWriter audioWriter = new AudioSampleWriter(outFile, sampleReader.getFormat(), AudioFileFormat.Type.WAVE);
         audioWriter.write(dataWave);
         audioWriter.close();
-
-//        double[] freqs = FFT.getFreqs(complexData.length, 44100); // đây là mảng tần số sao khi biến đổi fourier
-//
-//        double[] Angle = new double[freqs.length];
-//
-//        for (int i = 0; i < freqs.length/2; i++) {
-//            Angle[i] = Math.PI * 2 * freqs[i];
-//            System.out.print("   " + freqs[i]);
-//        }
     }
+    
 
     public static void main(String[] args) throws Exception {
         Encode();
         Decode();
+    }
+
+    private static void Encode() throws Exception {
+        System.out.println("Nhập tin cần giấu: ");
+        String messageSecret = scann.nextLine();
+        HandleEncode(messageSecret);
+        //HandleEncode2(messageSecret);
     }
 }
